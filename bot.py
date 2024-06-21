@@ -1,7 +1,3 @@
-# TO DO:
-# - setchannel only usable by admins
-
-
 # load bot token from hidden file
 with open("token.txt") as f:
     TOKEN = f.read()
