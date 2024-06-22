@@ -1,30 +1,36 @@
-# TO DO:
-# - setchannel only usable by admins
-
-
 # load bot token from hidden file
 with open("token.txt") as f:
     TOKEN = f.read()
 
 # imports
-import discord
+import discord  # https://pypi.org/project/discord.py/
 from discord import app_commands
 from discord.ext import commands, tasks
 from better_profanity import (
     profanity,
-)
-import requests, os, time, json, math, random
-from english_words import get_english_words_set
+)  # https://pypi.org/project/better-profanity/
+import requests, os, time, json, math, random, os.path
+from english_words import (
+    get_english_words_set,
+)  # https://pypi.org/project/english-words/
 from random import shuffle
-from random_word import RandomWords
+from random_word import RandomWords  # https://pypi.org/project/Random-Word/
 
 r = RandomWords()
 
 intents = discord.Intents.default()  # set intents
-intents.messages = True
 
 # create bot and tree
 bot = commands.Bot(command_prefix="", intents=intents)
+
+
+# check to make sure database json files exist
+if not os.path.isfile("servers.json"):
+    with open("servers.json", "w") as f:
+        f.write("{}")
+if not os.path.isfile("users.json"):
+    with open("users.json", "w") as f:
+        f.write("{}")
 
 
 # basic functions for bot startup
@@ -54,27 +60,29 @@ async def on_guild_join(guild):
 def addServer(serverid):
     with open("servers.json") as f:
         data = json.loads(f.read())
-    data.update(
-        {
-            serverid: {
-                "solved": 0,
-                "wordChannel": "",
-                "currentWord": "",
-                "expires": 0,
-                "lastGuess": 0,
+    if serverid not in data:  # make sure data isnt already saved
+        data.update(
+            {
+                serverid: {
+                    "solved": 0,
+                    "wordChannel": "",
+                    "currentWord": "",
+                    "expires": 0,
+                    "lastGuess": 0,
+                }
             }
-        }
-    )
-    with open("servers.json", "w") as f:
-        f.write(json.dumps(data, indent=3))
+        )
+        with open("servers.json", "w") as f:
+            f.write(json.dumps(data, indent=3))
 
 
 # generates a random English word no longer than maxLen
 def getRandomWord(maxLen):
-    x = 999
-    while x > maxLen:
-        word = r.get_random_word()  # get random lowercase word
-        x = len(word)
+    word = r.get_random_word()  # get random lowercase word
+    while (len(word) > maxLen or len(word) < 3) and (
+        profanity.contains_profanity(word) != True
+    ):  # make sure word isnt too long or too short AND ensure that word does not have profanity
+        word = r.get_random_word()
     return word
 
 
@@ -164,11 +172,18 @@ def getStats(serverid):  # gets server solve stats (pretty basic right now)
 def getPersonalStats(userid, username):
     with open("users.json") as f:
         data = json.loads(f.read())
-    embed = discord.Embed(
-        title=f"{username}'s Stats",
-        description=f"Questions solved: {data[str(userid)]['correct']} \n{len(data[str(userid)]['words'])} / 146600 possible words solved",  # possible words determined by filtering database for words between 4 and 8 chars
-        color=0xFFD60A,
-    )
+    if userid in data:
+        embed = discord.Embed(
+            title=f"{username}'s Stats",
+            description=f"Questions solved: {data[str(userid)]['correct']} \n{len(data[str(userid)]['words'])} / 146600 possible words solved",  # possible words determined by filtering database for words between 4 and 8 chars
+            color=0xFFD60A,
+        )
+    else:
+        embed = discord.Embed(
+            title=f"{username}'s Stats",
+            description=f"Questions solved: 0 \n0 / 146600 possible words solved",
+            color=0xFFD60A,
+        )
     return embed
 
 
@@ -188,7 +203,17 @@ async def unscramble(interaction, unscrambled: str):  # handles slash command us
     unscrambled: str
         the unscrambled word
     """
-    if interaction.channel.id != getCommandChannel(interaction.guild.id):
+    if getCommandChannel(interaction.guild.id) == "":
+        embed = discord.Embed(
+            title="Error",
+            description=f"No channel registered! Please use /setchannel to set the unscrambling channel!",
+            color=0xFF0000,
+        )
+        await interaction.response.send_message(
+            embed=embed,
+            ephemeral=True,
+        )
+    elif interaction.channel.id != getCommandChannel(interaction.guild.id):
         embed = discord.Embed(
             title="Error",
             description=f"Wrong channel! Use <#{getCommandChannel(interaction.guild.id)}>",
@@ -256,8 +281,8 @@ async def checkWordExpire():  # check if a server has expired words, and if so w
             if data[i]["expires"] < int(time.time()):  # run only for expired words
                 # once a word has expired, create a random-ish time frame to start a new guess
                 if (
-                    random.randint(0, 200) == 100
-                ):  # 0.5% chance to trigger... aka ~3000 seconds (50 mins) after expiration
+                    random.randint(0, 100) == 50
+                ):  # 01% chance to trigger... aka ~1500 seconds (25 mins) after expiration
                     data[i]["lastGuess"] = 0  # reset guess cooldown
                     data[i]["currentWord"] = getRandomWord(
                         random.randint(4, 8)
@@ -270,11 +295,14 @@ async def checkWordExpire():  # check if a server has expired words, and if so w
                     with open("servers.json", "w") as f:
                         f.write(json.dumps(data, indent=3))
 
+                    x = list(data[i]["currentWord"])
+                    random.shuffle(x)
                     channel = bot.get_channel(data[i]["wordChannel"])
                     embed = discord.Embed(
                         title="New Word",
-                        description="New word has been generated: "
-                        + "".join(shuffle(list(data[i]["currentWord"]))),
+                        description="New word has been generated: **"
+                        + "".join(x)
+                        + f"** (expires <t:{data[i]['expires']}:R>)",
                         color=0xFFD60A,
                     )
                     await channel.send(embed=embed)
