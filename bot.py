@@ -172,7 +172,7 @@ def getStats(serverid):  # gets server solve stats (pretty basic right now)
 def getPersonalStats(userid, username):
     with open("users.json") as f:
         data = json.loads(f.read())
-    if userid in data:
+    if str(userid) in data:
         embed = discord.Embed(
             title=f"{username}'s Stats",
             description=f"Questions solved: {data[str(userid)]['correct']} \n{len(data[str(userid)]['words'])} / 146600 possible words solved",  # possible words determined by filtering database for words between 4 and 8 chars
